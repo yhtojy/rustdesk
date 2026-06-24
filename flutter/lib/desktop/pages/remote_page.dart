@@ -60,14 +60,24 @@ class RemotePage extends StatefulWidget {
   final bool? forceRelay;
   final bool? isSharedPassword;
   final SimpleWrapper<State<RemotePage>?> _lastState = SimpleWrapper(null);
+  final RxBool titleToolbarReady = false.obs;
   final DesktopTabController? tabController;
 
   FFI get ffi => (_lastState.value! as _RemotePageState)._ffi;
+
+  Widget buildTitleToolbar(BuildContext context) {
+    final state = _lastState.value;
+    if (state is! _RemotePageState) return const SizedBox.shrink();
+    return state.buildTitleToolbar(context);
+  }
 
   @override
   State<RemotePage> createState() {
     final state = _RemotePageState(id);
     _lastState.value = state;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      titleToolbarReady.value = true;
+    });
     return state;
   }
 }
@@ -94,11 +104,6 @@ class _RemotePageState extends State<RemotePage>
   // Debounce timer for pointer lock center updates during window events.
   // Uses kDefaultPointerLockCenterThrottleMs from consts.dart for the duration.
   Timer? _pointerLockCenterDebounceTimer;
-
-  // We need `_instanceIdOnEnterOrLeaveImage4Toolbar` together with `_onEnterOrLeaveImage4Toolbar`
-  // to identify the toolbar instance and its callback function.
-  int? _instanceIdOnEnterOrLeaveImage4Toolbar;
-  Function(bool)? _onEnterOrLeaveImage4Toolbar;
 
   late FFI _ffi;
   Worker? _waylandKeyboardModeWorker;
@@ -401,26 +406,25 @@ class _RemotePageState extends State<RemotePage>
         ),
       );
 
-  Widget buildBody(BuildContext context) {
-    remoteToolbar(BuildContext context) => RemoteToolbar(
-          id: widget.id,
-          ffi: _ffi,
-          state: widget.toolbarState,
-          onEnterOrLeaveImageSetter: (id, func) {
-            _instanceIdOnEnterOrLeaveImage4Toolbar = id;
-            _onEnterOrLeaveImage4Toolbar = func;
-          },
-          onEnterOrLeaveImageCleaner: (id) {
-            // If _instanceIdOnEnterOrLeaveImage4Toolbar != id
-            // it means `_onEnterOrLeaveImage4Toolbar` is not set or it has been changed to another toolbar.
-            if (_instanceIdOnEnterOrLeaveImage4Toolbar == id) {
-              _instanceIdOnEnterOrLeaveImage4Toolbar = null;
-              _onEnterOrLeaveImage4Toolbar = null;
-            }
-          },
-          setRemoteState: setState,
-        );
+  Widget buildTitleToolbar(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: _ffi.ffiModel),
+        ChangeNotifierProvider.value(value: _ffi.imageModel),
+        ChangeNotifierProvider.value(value: _ffi.cursorModel),
+        ChangeNotifierProvider.value(value: _ffi.canvasModel),
+        ChangeNotifierProvider.value(value: _ffi.recordingModel),
+      ],
+      child: RemoteTitleToolbar(
+        id: widget.id,
+        ffi: _ffi,
+        state: widget.toolbarState,
+        setRemoteState: setState,
+      ),
+    );
+  }
 
+  Widget buildBody(BuildContext context) {
     bodyWidget() {
       return Stack(
         children: [
@@ -469,17 +473,7 @@ class _RemotePageState extends State<RemotePage>
                               ]),
                             ));
                       }
-                    }(),
-              // Use Overlay to enable rebuild every time on menu button click.
-              // Hide toolbar when relative mouse mode is active to prevent
-              // cursor from escaping to toolbar area.
-              Obx(() => _ffi.inputModel.relativeMouseMode.value
-                  ? const Offstage()
-                  : _ffi.ffiModel.pi.isSet.isTrue
-                      ? Overlay(initialEntries: [
-                          OverlayEntry(builder: remoteToolbar)
-                        ])
-                      : remoteToolbar(context)),
+                  }(),
               _ffi.ffiModel.pi.isSet.isFalse ? emptyOverlay() : Offstage(),
             ],
           ),
@@ -540,13 +534,6 @@ class _RemotePageState extends State<RemotePage>
 
     _cursorOverImage.value = true;
     _firstEnterImage.value = true;
-    if (_onEnterOrLeaveImage4Toolbar != null) {
-      try {
-        _onEnterOrLeaveImage4Toolbar!(true);
-      } catch (e) {
-        //
-      }
-    }
 
     // See [onWindowBlur].
     if (!isWindows) {
@@ -566,13 +553,6 @@ class _RemotePageState extends State<RemotePage>
 
     _cursorOverImage.value = false;
     _firstEnterImage.value = false;
-    if (_onEnterOrLeaveImage4Toolbar != null) {
-      try {
-        _onEnterOrLeaveImage4Toolbar!(false);
-      } catch (e) {
-        //
-      }
-    }
 
     // See [onWindowBlur].
     if (!isWindows) {

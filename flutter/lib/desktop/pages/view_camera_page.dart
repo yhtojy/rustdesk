@@ -58,14 +58,24 @@ class ViewCameraPage extends StatefulWidget {
   final bool? isSharedPassword;
   final String? connToken;
   final SimpleWrapper<State<ViewCameraPage>?> _lastState = SimpleWrapper(null);
+  final RxBool titleToolbarReady = false.obs;
   final DesktopTabController? tabController;
 
   FFI get ffi => (_lastState.value! as _ViewCameraPageState)._ffi;
+
+  Widget buildTitleToolbar(BuildContext context) {
+    final state = _lastState.value;
+    if (state is! _ViewCameraPageState) return const SizedBox.shrink();
+    return state.buildTitleToolbar(context);
+  }
 
   @override
   State<ViewCameraPage> createState() {
     final state = _ViewCameraPageState(id);
     _lastState.value = state;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      titleToolbarReady.value = true;
+    });
     return state;
   }
 }
@@ -81,11 +91,6 @@ class _ViewCameraPageState extends State<ViewCameraPage>
   var _blockableOverlayState = BlockableOverlayState();
 
   final FocusNode _rawKeyFocusNode = FocusNode(debugLabel: "rawkeyFocusNode");
-
-  // We need `_instanceIdOnEnterOrLeaveImage4Toolbar` together with `_onEnterOrLeaveImage4Toolbar`
-  // to identify the toolbar instance and its callback function.
-  int? _instanceIdOnEnterOrLeaveImage4Toolbar;
-  Function(bool)? _onEnterOrLeaveImage4Toolbar;
 
   late FFI _ffi;
 
@@ -253,26 +258,25 @@ class _ViewCameraPageState extends State<ViewCameraPage>
         ),
       );
 
-  Widget buildBody(BuildContext context) {
-    remoteToolbar(BuildContext context) => RemoteToolbar(
-          id: widget.id,
-          ffi: _ffi,
-          state: widget.toolbarState,
-          onEnterOrLeaveImageSetter: (id, func) {
-            _instanceIdOnEnterOrLeaveImage4Toolbar = id;
-            _onEnterOrLeaveImage4Toolbar = func;
-          },
-          onEnterOrLeaveImageCleaner: (id) {
-            // If _instanceIdOnEnterOrLeaveImage4Toolbar != id
-            // it means `_onEnterOrLeaveImage4Toolbar` is not set or it has been changed to another toolbar.
-            if (_instanceIdOnEnterOrLeaveImage4Toolbar == id) {
-              _instanceIdOnEnterOrLeaveImage4Toolbar = null;
-              _onEnterOrLeaveImage4Toolbar = null;
-            }
-          },
-          setRemoteState: setState,
-        );
+  Widget buildTitleToolbar(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: _ffi.ffiModel),
+        ChangeNotifierProvider.value(value: _ffi.imageModel),
+        ChangeNotifierProvider.value(value: _ffi.cursorModel),
+        ChangeNotifierProvider.value(value: _ffi.canvasModel),
+        ChangeNotifierProvider.value(value: _ffi.recordingModel),
+      ],
+      child: RemoteTitleToolbar(
+        id: widget.id,
+        ffi: _ffi,
+        state: widget.toolbarState,
+        setRemoteState: setState,
+      ),
+    );
+  }
 
+  Widget buildBody(BuildContext context) {
     bodyWidget() {
       return Stack(
         children: [
@@ -302,11 +306,6 @@ class _ViewCameraPageState extends State<ViewCameraPage>
                             ));
                       }
                     }(),
-              // Use Overlay to enable rebuild every time on menu button click.
-              _ffi.ffiModel.pi.isSet.isTrue
-                  ? Overlay(
-                      initialEntries: [OverlayEntry(builder: remoteToolbar)])
-                  : remoteToolbar(context),
               _ffi.ffiModel.pi.isSet.isFalse ? emptyOverlay() : Offstage(),
             ],
           ),
@@ -365,13 +364,6 @@ class _ViewCameraPageState extends State<ViewCameraPage>
   void enterView(PointerEnterEvent evt) {
     _cursorOverImage.value = true;
     _firstEnterImage.value = true;
-    if (_onEnterOrLeaveImage4Toolbar != null) {
-      try {
-        _onEnterOrLeaveImage4Toolbar!(true);
-      } catch (e) {
-        //
-      }
-    }
     // See [onWindowBlur].
     if (!isWindows) {
       if (!_rawKeyFocusNode.hasFocus) {
@@ -388,13 +380,6 @@ class _ViewCameraPageState extends State<ViewCameraPage>
 
     _cursorOverImage.value = false;
     _firstEnterImage.value = false;
-    if (_onEnterOrLeaveImage4Toolbar != null) {
-      try {
-        _onEnterOrLeaveImage4Toolbar!(false);
-      } catch (e) {
-        //
-      }
-    }
     // See [onWindowBlur].
     if (!isWindows) {
       _ffi.inputModel.enterOrLeave(false);

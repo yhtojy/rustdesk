@@ -934,6 +934,164 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   }
 }
 
+class RemoteTitleToolbar extends StatefulWidget {
+  final String id;
+  final FFI ffi;
+  final ToolbarState state;
+  final Function(VoidCallback) setRemoteState;
+
+  const RemoteTitleToolbar({
+    Key? key,
+    required this.id,
+    required this.ffi,
+    required this.state,
+    required this.setRemoteState,
+  }) : super(key: key);
+
+  @override
+  State<RemoteTitleToolbar> createState() => _RemoteTitleToolbarState();
+}
+
+class _RemoteTitleToolbarState extends State<RemoteTitleToolbar> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.state.init(widget.ffi.sessionId);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant RemoteTitleToolbar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.ffi.sessionId != widget.ffi.sessionId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.state.init(widget.ffi.sessionId);
+      });
+    }
+  }
+
+  void _setFullscreen(bool value) => stateGlobal.setFullscreen(value);
+
+  ThemeData _themeData(BuildContext context) {
+    return Theme.of(context).copyWith(
+      menuButtonTheme: MenuButtonThemeData(
+        style: ButtonStyle(
+          minimumSize: MaterialStatePropertyAll(Size(64, 32)),
+          textStyle: MaterialStatePropertyAll(
+            TextStyle(fontWeight: FontWeight.normal),
+          ),
+          shape: MaterialStatePropertyAll(RoundedRectangleBorder(
+              borderRadius:
+                  BorderRadius.circular(_ToolbarTheme.menuButtonBorderRadius))),
+        ),
+      ),
+      dividerTheme: DividerThemeData(
+        space: _ToolbarTheme.dividerSpaceToAction,
+        color: _ToolbarTheme.dividerColor(context),
+      ),
+      menuBarTheme: MenuBarThemeData(
+          style: MenuStyle(
+        padding: MaterialStatePropertyAll(EdgeInsets.zero),
+        elevation: MaterialStatePropertyAll(0),
+        shape: MaterialStatePropertyAll(BeveledRectangleBorder()),
+      ).copyWith(
+              backgroundColor:
+                  Theme.of(context).menuBarTheme.style?.backgroundColor)),
+    );
+  }
+
+  List<Widget> _buildToolbarItems(BuildContext context) {
+    final items = <Widget>[
+      Obx(() {
+        final privacyModeState = PrivacyModeState.find(widget.id);
+        if ((privacyModeState.isEmpty ||
+                allowDisplaySwitchInPrivacyMode(
+                    widget.ffi.ffiModel.pi, privacyModeState.value)) &&
+            widget.ffi.ffiModel.pi.displaysCount.value > 1 &&
+            mainGetLocalBoolOptionSync(kOptionAllowMonitorSwitchMainToolbar)) {
+          return _MainMonitorSwitchButton(id: widget.id, ffi: widget.ffi);
+        } else {
+          return const Offstage();
+        }
+      }),
+    ];
+    if (!isWebDesktop) {
+      items.add(_MobileActionMenu(ffi: widget.ffi));
+    }
+
+    items.add(Obx(() {
+      final privacyModeState = PrivacyModeState.find(widget.id);
+      if ((privacyModeState.isEmpty ||
+              allowDisplaySwitchInPrivacyMode(
+                  widget.ffi.ffiModel.pi, privacyModeState.value)) &&
+          widget.ffi.ffiModel.pi.displaysCount.value > 1) {
+        return _MonitorMenu(
+          id: widget.id,
+          ffi: widget.ffi,
+          edge: _ToolbarEdge.top,
+          setRemoteState: widget.setRemoteState,
+        );
+      } else {
+        return Offstage();
+      }
+    }));
+
+    items.add(_ControlMenu(
+      id: widget.id,
+      ffi: widget.ffi,
+      state: widget.state,
+    ));
+    items.add(_DisplayMenu(
+      id: widget.id,
+      ffi: widget.ffi,
+      state: widget.state,
+      setFullscreen: _setFullscreen,
+    ));
+    if (widget.ffi.connType == ConnType.defaultConn) {
+      items.add(_KeyboardMenu(id: widget.id, ffi: widget.ffi));
+    }
+    items.add(_ChatMenu(id: widget.id, ffi: widget.ffi));
+    if (!isWeb) {
+      items.add(_VoiceCallMenu(id: widget.id, ffi: widget.ffi));
+    }
+    if (!isWeb) {
+      items.add(_RecordMenu());
+    }
+    items.add(_CloseMenu(id: widget.id, ffi: widget.ffi));
+    return items;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      if (!widget.state.initialized.value ||
+          widget.state.hide.value ||
+          widget.ffi.ffiModel.pi.isSet.isFalse ||
+          widget.ffi.inputModel.relativeMouseMode.value) {
+        return const SizedBox.shrink();
+      }
+      return SizedBox(
+        height: kDesktopRemoteTabBarHeight,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerRight,
+          child: Theme(
+            data: _themeData(context),
+            child: Material(
+              type: MaterialType.transparency,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: _buildToolbarItems(context),
+              ),
+            ),
+          ),
+        ),
+      );
+    });
+  }
+}
+
 class _PinMenu extends StatelessWidget {
   final ToolbarState state;
   const _PinMenu({Key? key, required this.state}) : super(key: key);

@@ -138,6 +138,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
         tail: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            _SelectedRemoteTitleToolbar(tabController: tabController),
             _RelativeMouseModeHint(tabController: tabController),
             const AddButton(),
           ],
@@ -554,6 +555,28 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
     }
     _update_remote_count();
     return returnValue;
+  }
+}
+
+class _SelectedRemoteTitleToolbar extends StatelessWidget {
+  final DesktopTabController tabController;
+
+  const _SelectedRemoteTitleToolbar({Key? key, required this.tabController})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final tabs = tabController.state.value.tabs;
+      final selected = tabController.state.value.selected;
+      if (tabs.isEmpty || selected < 0 || selected >= tabs.length) {
+        return const SizedBox.shrink();
+      }
+      final page = tabs[selected].page;
+      if (page is! RemotePage) return const SizedBox.shrink();
+      if (!page.titleToolbarReady.value) return const SizedBox.shrink();
+      return page.buildTitleToolbar(context).paddingOnly(right: 4);
+    });
   }
 }
 
